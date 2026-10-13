@@ -13,3 +13,6 @@ The first letter of every word is upper-cased and the rest lower-cased: `hELLO w
 ## Building from source
 Plain C against the Win32 API. With MinGW-w64 installed: `sh src/build.sh`.
 Logic tests: `gcc src/test_capcase.c -o t && ./t`.
+
+## Icon
+The "Aa" glyph is `format-letter-case` from [Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache 2.0), placed on a blue rounded square. Source is `src/icon.svg`; `src/app.ico` holds sizes 16 to 256 px.
