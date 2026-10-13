@@ -14,9 +14,9 @@ static wchar_t win_lower(wchar_t c) { return (wchar_t)(ULONG_PTR)CharLowerW((LPW
 #define TO_LOWER(c) win_lower(c)
 #include "capcase.h"
 
-enum { ID_INPUT = 101, ID_CONVERT, ID_OUTPUT, ID_COPY, ID_LBL_IN, ID_LBL_OUT };
+enum { ID_INPUT = 101, ID_CONVERT, ID_OUTPUT, ID_COPY, ID_LBL_IN, ID_LBL_OUT, ID_PASTE };
 
-static HWND hInput, hOutput, hConvert, hCopy, hLblIn, hLblOut;
+static HWND hInput, hOutput, hConvert, hCopy, hLblIn, hLblOut, hPaste;
 static HFONT hFont;
 static UINT dpi = 96;
 
@@ -54,9 +54,33 @@ static void do_copy(HWND hwnd)
         }
         CloseClipboard();
         SetWindowTextW(hCopy, L"Copied!");
-        SetTimer(hwnd, 1, 1200, NULL);
+        SetTimer(hwnd, 1, 2000, NULL);
     }
     free(t);
+}
+
+/* Paste: clipboard text -> input, convert, then copy the result back to the clipboard. */
+static void do_paste(HWND hwnd)
+{
+    wchar_t *t = NULL;
+    if (IsClipboardFormatAvailable(CF_UNICODETEXT) && OpenClipboard(hwnd)) {
+        HGLOBAL mem = GetClipboardData(CF_UNICODETEXT);
+        const wchar_t *src = mem ? GlobalLock(mem) : NULL;
+        if (src) {
+            t = _wcsdup(src);
+            GlobalUnlock(mem);
+        }
+        CloseClipboard();
+    }
+    if (!t) {
+        SetWindowTextW(hPaste, L"No text on clipboard");
+        SetTimer(hwnd, 2, 1500, NULL);
+        return;
+    }
+    SetWindowTextW(hInput, t);
+    free(t);
+    do_convert();
+    do_copy(hwnd);
 }
 
 static void apply_font(void)
@@ -66,8 +90,8 @@ static void apply_font(void)
     ncm.lfMessageFont.lfHeight = -S(15);
     if (hFont) DeleteObject(hFont);
     hFont = CreateFontIndirectW(&ncm.lfMessageFont);
-    HWND all[] = { hInput, hOutput, hConvert, hCopy, hLblIn, hLblOut };
-    for (int i = 0; i < 6; i++) SendMessageW(all[i], WM_SETFONT, (WPARAM)hFont, TRUE);
+    HWND all[] = { hInput, hOutput, hConvert, hCopy, hLblIn, hLblOut, hPaste };
+    for (int i = 0; i < 7; i++) SendMessageW(all[i], WM_SETFONT, (WPARAM)hFont, TRUE);
 }
 
 static void layout(HWND hwnd)
@@ -75,9 +99,10 @@ static void layout(HWND hwnd)
     RECT rc;
     GetClientRect(hwnd, &rc);
     int m = S(12), w = rc.right - 2 * m, lblH = S(20), btnH = S(32), btnW = S(150), gap = S(8);
-    int boxH = (rc.bottom - 2 * m - 2 * lblH - 2 * btnH - 4 * gap) / 2;
+    int boxH = (rc.bottom - 2 * m - 2 * lblH - 3 * btnH - 5 * gap) / 2;
     if (boxH < S(40)) boxH = S(40);
     int y = m;
+    MoveWindow(hPaste, m, y, btnW, btnH, TRUE); y += btnH + gap;
     MoveWindow(hLblIn, m, y, w, lblH, TRUE);   y += lblH;
     MoveWindow(hInput, m, y, w, boxH, TRUE);   y += boxH + gap;
     MoveWindow(hConvert, m, y, btnW, btnH, TRUE); y += btnH + gap;
@@ -110,6 +135,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     switch (msg) {
     case WM_CREATE: {
         DWORD ml = ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP;
+        hPaste   = make(hwnd, L"BUTTON", L"Paste && convert", BS_PUSHBUTTON | WS_TABSTOP, ID_PASTE);
         hLblIn   = make(hwnd, L"STATIC", L"Input", 0, ID_LBL_IN);
         hInput   = make(hwnd, L"EDIT", L"", ml | ES_WANTRETURN, ID_INPUT);
         hConvert = make(hwnd, L"BUTTON", L"Convert", BS_DEFPUSHBUTTON | WS_TABSTOP, ID_CONVERT);
@@ -145,10 +171,12 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_COMMAND:
         if (LOWORD(wp) == ID_CONVERT) do_convert();
         else if (LOWORD(wp) == ID_COPY) do_copy(hwnd);
+        else if (LOWORD(wp) == ID_PASTE) do_paste(hwnd);
         return 0;
     case WM_TIMER:
-        KillTimer(hwnd, 1);
-        SetWindowTextW(hCopy, L"Copy to clipboard");
+        KillTimer(hwnd, wp);
+        if (wp == 1) SetWindowTextW(hCopy, L"Copy to clipboard");
+        else SetWindowTextW(hPaste, L"Paste && convert");
         return 0;
     case WM_DESTROY:
         if (hFont) DeleteObject(hFont);
@@ -180,7 +208,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmd, int show)
     ReleaseDC(NULL, screen);
 
     HWND hwnd = CreateWindowExW(0, wc.lpszClassName, L"Capital Case", WS_OVERLAPPEDWINDOW,
-                                CW_USEDEFAULT, CW_USEDEFAULT, S(520), S(480),
+                                CW_USEDEFAULT, CW_USEDEFAULT, S(520), S(520),
                                 NULL, NULL, hInst, NULL);
     GetDpiForWindowFn gdfw = (GetDpiForWindowFn)GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow");
     if (gdfw) {
@@ -188,7 +216,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmd, int show)
         if (d && d != dpi) {
             dpi = d;
             apply_font();
-            SetWindowPos(hwnd, NULL, 0, 0, S(520), S(480), SWP_NOMOVE | SWP_NOZORDER);
+            SetWindowPos(hwnd, NULL, 0, 0, S(520), S(520), SWP_NOMOVE | SWP_NOZORDER);
         }
     }
     ShowWindow(hwnd, show);

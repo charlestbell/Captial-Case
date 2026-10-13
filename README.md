@@ -2,6 +2,8 @@
 
 A tiny portable Windows app: type or paste text, press **Convert**, and the output box shows it in Capital Case. **Copy to clipboard** copies the result.
 
+**Paste & convert** (top) does it all in one click: it takes the text on your clipboard, converts it, and puts the result back on the clipboard, replacing whatever was in the boxes.
+
 ## Running
 Download [`CapitalCase.exe`](CapitalCase.exe) (click **Download raw file** on GitHub) and double-click it. No install, no runtime, no extra files (64-bit Windows 7 or later). It uses only DLLs that ship with Windows.
 
